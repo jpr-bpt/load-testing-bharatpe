@@ -49,8 +49,14 @@ export class BaseLoadTest {
    * @returns {void}
    */
   init() {
-    // TODO: Implementation in Step 1.4
-    throw new Error('BaseLoadTest.init() not yet implemented');
+    // Load data using CSVDataLoader
+    const dataSourceConfig = this.endpointConfig.dataSource;
+    const sharedArrayName = `${this.serviceConfig.name}-${this.endpointConfig.path}-data`;
+    
+    this.requestData = CSVDataLoader.load(dataSourceConfig, sharedArrayName);
+    
+    console.log(`BaseLoadTest: Initialized test for ${this.serviceConfig.name}${this.endpointConfig.path}`);
+    console.log(`BaseLoadTest: Test type: ${this.testType}`);
   }
   
   // ==========================================================================
@@ -65,9 +71,9 @@ export class BaseLoadTest {
    * @returns {Object} Selected request data
    */
   selectData() {
-    // TODO: Implementation in Step 1.4
     // Default: Random selection
-    throw new Error('BaseLoadTest.selectData() not yet implemented');
+    const randomIndex = Math.floor(Math.random() * this.requestData.length);
+    return this.requestData[randomIndex];
   }
   
   /**
@@ -91,8 +97,8 @@ export class BaseLoadTest {
    * @returns {Object} HTTP headers
    */
   buildHeaders() {
-    // TODO: Implementation in Step 1.4
-    // Default: Return headers from config
+    // Default: Return headers from config (or empty object)
+    return this.endpointConfig.headers || {};
   }
   
   /**
@@ -103,8 +109,15 @@ export class BaseLoadTest {
    * @returns {string} Full URL
    */
   buildUrl() {
-    // TODO: Implementation in Step 1.4
-    // Default: baseUrl + endpoint path
+    // Default: Concatenate baseUrl + endpoint path
+    const baseUrl = this.serviceConfig.baseUrl;
+    const path = this.endpointConfig.path;
+    
+    // Handle trailing slash in baseUrl
+    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    
+    return `${cleanBaseUrl}${cleanPath}`;
   }
   
   /**
@@ -118,8 +131,22 @@ export class BaseLoadTest {
    * @returns {Object} k6 HTTP response
    */
   makeRequest(url, payload, headers) {
-    // TODO: Implementation in Step 1.4
-    throw new Error('BaseLoadTest.makeRequest() not yet implemented');
+    const method = (this.endpointConfig.method || 'POST').toUpperCase();
+    const options = {
+      headers: headers,
+      timeout: '30s', // Default timeout
+    };
+    
+    // Execute request based on HTTP method
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+      return http[method.toLowerCase()](url, JSON.stringify(payload), options);
+    } else if (method === 'GET') {
+      return http.get(url, options);
+    } else if (method === 'DELETE') {
+      return http.del(url, null, options);
+    } else {
+      throw new Error(`BaseLoadTest: Unsupported HTTP method: ${method}`);
+    }
   }
   
   /**
@@ -131,8 +158,8 @@ export class BaseLoadTest {
    * @returns {boolean} True if validation passed
    */
   validateResponse(response) {
-    // TODO: Implementation in Step 1.4
-    // Default: Use validator
+    // Default: Use RequestValidator with config
+    return this.validator.validate(response);
   }
   
   /**
@@ -144,8 +171,10 @@ export class BaseLoadTest {
    * @returns {void}
    */
   handleError(response) {
-    // TODO: Implementation in Step 1.4
-    // Default: Console log
+    // Default: Log error details
+    console.error(`BaseLoadTest: Request failed for ${this.endpointConfig.path}`);
+    console.error(`  Status: ${response.status}`);
+    console.error(`  Duration: ${response.timings.duration.toFixed(2)}ms`);
   }
   
   /**
@@ -172,16 +201,29 @@ export class BaseLoadTest {
    * @final
    */
   run() {
-    // TODO: Implementation in Step 1.4
-    // Template:
-    // 1. Select data
-    // 2. Prepare request
-    // 3. Build headers & URL
-    // 4. Make request
-    // 5. Validate response
-    // 6. Handle errors if needed
-    // 7. Sleep (think time)
-    throw new Error('BaseLoadTest.run() not yet implemented');
+    // Step 1: Select data for this iteration
+    const data = this.selectData();
+    
+    // Step 2: Prepare request (allows transformation)
+    const payload = this.prepareRequest(data);
+    
+    // Step 3: Build headers and URL
+    const headers = this.buildHeaders();
+    const url = this.buildUrl();
+    
+    // Step 4: Make HTTP request
+    const response = this.makeRequest(url, payload, headers);
+    
+    // Step 5: Validate response
+    const isValid = this.validateResponse(response);
+    
+    // Step 6: Handle errors if validation failed
+    if (!isValid) {
+      this.handleError(response);
+    }
+    
+    // Step 7: Think time (pause before next iteration)
+    sleep(this.getThinkTime());
   }
   
   /**
@@ -191,8 +233,12 @@ export class BaseLoadTest {
    * @final
    */
   getOptions() {
-    // TODO: Implementation in Step 1.4
-    throw new Error('BaseLoadTest.getOptions() not yet implemented');
+    return {
+      stages: this._buildStages(),
+      thresholds: this._buildThresholds(),
+      summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
+      gracefulStop: '30s',
+    };
   }
   
   // ==========================================================================
@@ -206,7 +252,14 @@ export class BaseLoadTest {
    * @private
    */
   _buildStages() {
-    // TODO: Implementation in Step 1.4
+    // Get load profile based on test type (smoke or load)
+    const loadProfiles = this.endpointConfig.loadProfiles;
+    
+    if (!loadProfiles || !loadProfiles[this.testType]) {
+      throw new Error(`BaseLoadTest: No load profile found for test type '${this.testType}'`);
+    }
+    
+    return loadProfiles[this.testType].stages;
   }
   
   /**
@@ -216,6 +269,41 @@ export class BaseLoadTest {
    * @private
    */
   _buildThresholds() {
-    // TODO: Implementation in Step 1.4
+    const thresholdConfig = this.endpointConfig.thresholds;
+    
+    if (!thresholdConfig) {
+      // Return default minimal thresholds
+      return {
+        'http_req_failed': ['rate<0.1'], // Less than 10% errors
+      };
+    }
+    
+    const thresholds = {};
+    
+    // HTTP request duration thresholds
+    if (thresholdConfig.p95Duration || thresholdConfig.p99Duration) {
+      const durationThresholds = [];
+      
+      if (thresholdConfig.p95Duration) {
+        durationThresholds.push(`p(95)<${thresholdConfig.p95Duration}`);
+      }
+      if (thresholdConfig.p99Duration) {
+        durationThresholds.push(`p(99)<${thresholdConfig.p99Duration}`);
+      }
+      
+      thresholds['http_req_duration'] = durationThresholds;
+    }
+    
+    // HTTP request failed rate
+    if (thresholdConfig.errorRate !== undefined) {
+      thresholds['http_req_failed'] = [`rate<${thresholdConfig.errorRate}`];
+    }
+    
+    // Checks pass rate
+    if (thresholdConfig.checkPassRate !== undefined) {
+      thresholds['checks'] = [`rate>${thresholdConfig.checkPassRate}`];
+    }
+    
+    return thresholds;
   }
 }

@@ -52,6 +52,24 @@ export default function() {
 }
 ```
 
+
+```javascript
+import { TestFactory } from '../../framework/core/TestFactory.js';
+import config from '../services/central-merchant-auth/config.json';
+
+// Create test
+const test = TestFactory.createTest(config, 'generate-token-for-v2', 'load');
+
+// Export k6 functions
+export const options = test.getOptions();
+test.init();
+
+export default function() {
+  test.run();
+}
+
+```
+
 ### For Custom Endpoints (10% of cases)
 
 ```javascript
@@ -140,6 +158,62 @@ See service configuration files for detailed schema.
         },
         "load": {
           "stages": [...]
+        }
+      },
+      "thinkTime": 1
+    }
+  }
+}
+```
+
+example config 
+``` json
+{
+  "service": {
+    "name": "central-merchant-auth",
+    "baseUrl": "https://central-merchant-auth-service.bharatpe.co.in",
+    "environment": "staging"
+  },
+  "endpoints": {
+    "generate-token-for-v2": {
+      "path": "/auth/v2/generate-token-for-v2",
+      "method": "POST",
+      "dataSource": {
+        "type": "csv",
+        "path": "./data/requests.csv",
+        "requestColumn": "request_json",
+        "filterByEndpoint": "/auth/v2/generate-token-for-v2"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "validation": {
+        "statusCode": 200,
+        "requiredFields": ["success", "data.accessToken", "data.refreshToken"],
+        "successField": "success",
+        "successValue": true,
+        "maxDuration": 1000
+      },
+      "thresholds": {
+        "p95Duration": 1000,
+        "p99Duration": 2000,
+        "errorRate": 0.05,
+        "checkPassRate": 0.95
+      },
+      "loadProfiles": {
+        "smoke": {
+          "stages": [
+            { "duration": "30s", "target": 1 },
+            { "duration": "30s", "target": 2 }
+          ]
+        },
+        "load": {
+          "stages": [
+            { "duration": "2m", "target": 5 },
+            { "duration": "3m", "target": 25 },
+            { "duration": "5m", "target": 25 },
+            { "duration": "2m", "target": 0 }
+          ]
         }
       },
       "thinkTime": 1

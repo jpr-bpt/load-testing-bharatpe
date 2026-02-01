@@ -46,8 +46,18 @@ export class RequestValidator {
    * const passed = validator.validate(response);
    */
   validate(response) {
-    // TODO: Implementation in Step 1.3
-    throw new Error('RequestValidator.validate() not yet implemented');
+    // Build checks object from configuration
+    const checks = this._buildChecks();
+    
+    // Run k6 checks
+    const result = check(response, checks);
+    
+    // Log failure details if needed
+    if (!result) {
+      this._logFailure(response);
+    }
+    
+    return result;
   }
   
   /**
@@ -57,7 +67,48 @@ export class RequestValidator {
    * @private
    */
   _buildChecks() {
-    // TODO: Implementation in Step 1.3
+    const checks = {};
+    
+    // Check 1: Status code validation
+    if (this.config.statusCode) {
+      checks[`status is ${this.config.statusCode}`] = (r) => r.status === this.config.statusCode;
+    }
+    
+    // Check 2: Required fields validation (supports nested paths)
+    if (this.config.requiredFields && Array.isArray(this.config.requiredFields)) {
+      this.config.requiredFields.forEach(fieldPath => {
+        checks[`has field '${fieldPath}'`] = (r) => {
+          try {
+            const body = JSON.parse(r.body);
+            const value = this._getNestedField(body, fieldPath);
+            return value !== undefined && value !== null;
+          } catch (e) {
+            return false;
+          }
+        };
+      });
+    }
+    
+    // Check 3: Success field validation
+    if (this.config.successField) {
+      const expectedValue = this.config.successValue !== undefined ? this.config.successValue : true;
+      checks[`${this.config.successField} is ${expectedValue}`] = (r) => {
+        try {
+          const body = JSON.parse(r.body);
+          const value = this._getNestedField(body, this.config.successField);
+          return value === expectedValue;
+        } catch (e) {
+          return false;
+        }
+      };
+    }
+    
+    // Check 4: Max duration validation (if specified)
+    if (this.config.maxDuration) {
+      checks[`response time < ${this.config.maxDuration}ms`] = (r) => r.timings.duration < this.config.maxDuration;
+    }
+    
+    return checks;
   }
   
   /**
@@ -72,7 +123,10 @@ export class RequestValidator {
    * _getNestedField({ data: { token: 'abc' } }, 'data.token') // Returns 'abc'
    */
   _getNestedField(obj, path) {
-    // TODO: Implementation in Step 1.3
+    // Split path by dots and traverse the object
+    return path.split('.').reduce((current, key) => {
+      return current?.[key];
+    }, obj);
   }
   
   /**
@@ -82,6 +136,12 @@ export class RequestValidator {
    * @private
    */
   _logFailure(response) {
-    // TODO: Implementation in Step 1.3
+    console.error('RequestValidator: Validation failed');
+    console.error(`  Status: ${response.status}`);
+    console.error(`  Duration: ${response.timings.duration.toFixed(2)}ms`);
+    
+    // Log response body (truncated)
+    const bodyPreview = response.body ? response.body.substring(0, 200) : '(empty)';
+    console.error(`  Body: ${bodyPreview}${response.body.length > 200 ? '...' : ''}`);
   }
 }
