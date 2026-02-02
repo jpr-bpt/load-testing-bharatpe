@@ -1,0 +1,52 @@
+{
+    "service": {
+      "name": "central-merchant-auth",
+      "baseUrl": "https://central-merchant-auth-service.bharatpe.co.in",
+      "environment": "staging"
+    },
+    "endpoints": {
+      "generate-token-for-v2": {
+        "path": "/auth/v2/generate-token-for-v2",
+        "method": "POST",
+        "dataSource": {
+          "type": "csv",
+          "path": "/Users/jatin.jha/workspace/load_testing/central_auth_merchant_load_testing/sample_central_merchant_auth_load_testing_script.csv",
+          "requestColumn": "request_json",
+          "filterByEndpoint": "/auth/v2/generate-token-for-v2"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "validation": {
+          "statusCode": 200,
+          "requiredFields": ["success", "data.accessToken", "data.refreshToken"],
+          "successField": "success",
+          "successValue": true,
+          "maxDuration": 1000
+        },
+        "thresholds": {
+          "p95Duration": 1000,
+          "p99Duration": 2000,
+          "errorRate": 0.05,
+          "checkPassRate": 0.95
+        },
+        "loadProfiles": {
+          "smoke": {
+            "stages": [
+              { "duration": "30s", "target": 1 },
+              { "duration": "30s", "target": 2 }
+            ]
+          },
+          "load": {
+            "stages": [
+              { "duration": "2m", "target": 5 },
+              { "duration": "3m", "target": 25 },
+              { "duration": "5m", "target": 25 },
+              { "duration": "2m", "target": 0 }
+            ]
+          }
+        },
+        "thinkTime": 1
+      }
+    }
+  }

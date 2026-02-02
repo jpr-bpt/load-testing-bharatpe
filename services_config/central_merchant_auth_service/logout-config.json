@@ -1,0 +1,46 @@
+{
+    "service": {
+      "name": "central-merchant-auth",
+      "baseUrl": "https://central-merchant-auth-service.bharatpe.co.in",
+      "environment": "qa"
+    },
+    "endpoints": {
+      "logout": {
+        "path": "/auth/v2/logout",
+        "method": "PUT",
+        "dataSource": {
+          "type": "csv",
+          "path": "/Users/jatin.jha/workspace/load_testing/central_auth_merchant_load_testing/sample_central_merchant_auth_load_testing_script.csv",
+          "requestColumn": "request_json",
+          "filterByEndpoint": "/auth/v2/logout"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "validation": {
+          "statusCode": 200,
+          "requiredFields": ["success"],
+          "successField": "success",
+          "successValue": true,
+          "maxDuration": 10000
+        },
+        "thresholds": {
+          "p95Duration": 20,
+          "p99Duration": 8200,
+          "errorRate": 0,
+          "checkPassRate": 100
+        },
+        "loadProfiles": {
+          "load": {
+            "stages": [
+              { "duration": "2m", "target": 5 },
+              { "duration": "3m", "target": 10 },
+              { "duration": "5m", "target": 10 },
+              { "duration": "2m", "target": 0 }
+            ]
+          }
+        },
+        "thinkTime": 0.1
+      }
+    }
+  }

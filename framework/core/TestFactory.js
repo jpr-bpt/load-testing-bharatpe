@@ -41,8 +41,8 @@ export class TestFactory {
     TestFactory._validateConfig(config);
     
     // Validate test type
-    if (!['smoke', 'load'].includes(testType)) {
-      throw new Error(`TestFactory: Invalid test type '${testType}'. Must be 'smoke' or 'load'.`);
+    if (!['smoke', 'load','spike','stress'].includes(testType)) {
+      throw new Error(`TestFactory: Invalid test type '${testType}'. Must be valid .`);
     }
     
     // Get endpoint configuration
