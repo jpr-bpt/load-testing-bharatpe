@@ -5,7 +5,7 @@ from datetime import datetime
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
-INPUT_FILE = "coralogix_logs_20260130_173117.jsonl"
+INPUT_FILE = "/Users/Devanshu/Desktop/aws_logs/java_logs/combined_logs.jsonl"
 OUTPUT_FILE = f"api_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
 # --------------------------------------------------
@@ -82,53 +82,53 @@ def parse_key_value_log(log_section):
 def extract_api_log_info(log_entry):
     """
     Extract API logging information from a log entry.
+    Supports both Coralogix format and AWS/CloudWatch format.
     Returns a dictionary with extracted fields or None if not an API log.
     """
     try:
-        # Navigate the nested structure
-        result = log_entry.get("result", {})
-        results = result.get("results", [])
+        # Detect log format and extract accordingly
+        log_message = ""
+        timestamp = ""
+        log_id = ""
+        pod_name = ""
         
-        if not results:
+        # Format 1: AWS/CloudWatch format (has log_obj)
+        if "log_obj" in log_entry:
+            log_obj = log_entry.get("log_obj", {})
+            log_message = log_obj.get("log", "")
+            timestamp = log_entry.get("date", "")
+            log_id = log_obj.get("X-Request-ID", "")
+            pod_name = log_entry.get("kubernetes.pod_name", "")
+        
+        # Format 2: Coralogix format (has result.results)
+        elif "result" in log_entry:
+            result = log_entry.get("result", {})
+            results = result.get("results", [])
+            
+            if not results:
+                return None
+            
+            first_result = results[0]
+            
+            # Extract metadata
+            metadata = {item["key"]: item["value"] for item in first_result.get("metadata", [])}
+            labels = {item["key"]: item["value"] for item in first_result.get("labels", [])}
+            
+            # Parse userData JSON string
+            user_data_str = first_result.get("userData", "{}")
+            user_data = json.loads(user_data_str)
+            
+            # Get the log message
+            log_message = user_data.get("log", "")
+            timestamp = metadata.get("timestamp", "")
+            log_id = metadata.get("logid", "")
+            pod_name = user_data.get("kubernetes", {}).get("pod_name", "")
+        else:
             return None
-        
-        first_result = results[0]
-        
-        # Extract metadata
-        metadata = {item["key"]: item["value"] for item in first_result.get("metadata", [])}
-        labels = {item["key"]: item["value"] for item in first_result.get("labels", [])}
-        
-        # Parse userData JSON string
-        user_data_str = first_result.get("userData", "{}")
-        user_data = json.loads(user_data_str)
-        
-        # Get the log message
-        log_message = user_data.get("log", "")
         
         # Check if this is an API_LOGGING entry
         if "API_LOGGING:" not in log_message:
             return None
-        
-        # Extract basic info
-        timestamp = metadata.get("timestamp", "")
-        log_id = metadata.get("logid", "")
-        pod_name = user_data.get("kubernetes", {}).get("pod_name", "")
-        
-        # # Parse the log message to extract request_id, trace_id, thread
-        # request_id = ""
-        # trace_id = ""
-        # thread = ""
-        
-        # # Extract thread name (e.g., [http-nio-9091-exec-1])
-        # if "[" in log_message and "]" in log_message:
-        #     parts = log_message.split("[")
-        #     for part in parts:
-        #         if "http-nio" in part or "exec" in part:
-        #             thread = part.split("]")[0].strip()
-        #         if "X-Request-ID=" in part:
-        #             request_id = part.split("X-Request-ID=")[1].split(",")[0].split("]")[0].strip()
-        #         if "trace_id=" in part:
-        #             trace_id = part.split("trace_id=")[1].split(",")[0].split("]")[0].strip()
         
         # Extract API_LOGGING data section
         api_logging_start = log_message.find("API_LOGGING:")
@@ -211,21 +211,35 @@ with open(INPUT_FILE, "r") as f:
         
         try:
             log_entry = json.loads(line)
+            
+            # For Coralogix format, process ALL results in the array
             result = log_entry.get("result", {})
             results = result.get("results", [])
             
-            # Process ALL results in the array, not just the first one
-            for single_result in results:
-                total_log_entries += 1
-                
-                # Create a temporary log entry with just this result
-                temp_log_entry = {
-                    "result": {
-                        "results": [single_result]
+            if results:
+                # Coralogix format - multiple results per line
+                for single_result in results:
+                    total_log_entries += 1
+                    
+                    # Create a temporary log entry with just this result
+                    temp_log_entry = {
+                        "result": {
+                            "results": [single_result]
+                        }
                     }
-                }
-                
-                api_info = extract_api_log_info(temp_log_entry)
+                    
+                    api_info = extract_api_log_info(temp_log_entry)
+                    
+                    if api_info:
+                        api_logs.append(api_info)
+                        api_log_count += 1
+                        
+                        if api_log_count % 100 == 0:
+                            print(f"Processed {total_log_entries} log entries from {total_lines} lines, found {api_log_count} API logs...")
+            else:
+                # AWS/CloudWatch format - one log entry per line
+                total_log_entries += 1
+                api_info = extract_api_log_info(log_entry)
                 
                 if api_info:
                     api_logs.append(api_info)
